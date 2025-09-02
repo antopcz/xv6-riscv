@@ -16,3 +16,5 @@ kernel/kernel
 user/usys.S
 .gdbinit
 TAGS
+.DS_Store
+docs/.DS_Store
