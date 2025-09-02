@@ -14,6 +14,8 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
+extern uint ticks;
+extern struct spinlock tickslock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -124,6 +126,9 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  // Inicialización de FIFO
+  p->arriveticks = 0;
+  p->has_arrive  = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -227,6 +232,13 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
+// FIFO: registrar tiempo de llegada del primer proceso
+if (p->has_arrive == 0) {
+  acquire(&tickslock);
+  p->arriveticks = ticks;
+  release(&tickslock);
+  p->has_arrive = 1;
+}
 
   release(&p->lock);
 }
@@ -250,8 +262,7 @@ shrinkproc(int n)
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
-int
-fork(void)
+int fork(void)
 {
   int i, pid;
   struct proc *np;
@@ -294,6 +305,13 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+// FIFO: registrar tiempo de llegada del hijo
+if (np->has_arrive == 0) {
+  acquire(&tickslock);
+  np->arriveticks = ticks;
+  release(&tickslock);
+  np->has_arrive = 1;
+}
   release(&np->lock);
 
   return pid;
@@ -420,41 +438,45 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-
   c->proc = 0;
+
   for(;;){
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting. Then turn them back off
-    // to avoid a possible race between an interrupt
-    // and wfi.
+    // Enable interrupts on this processor.
     intr_on();
-    intr_off();
 
-    int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
+    struct proc *best = 0;
+
+    // Recorre todos los procesos y elige el más "antiguo"
+    for(p = proc; p < &proc[NPROC]; p++){
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+      if(p->state == RUNNABLE){
+        if(best == 0){
+          best = p;              // primer candidato (queda con su lock tomado)
+          continue;
+        }
+        if(p->arriveticks < best->arriveticks){
+          // p es mejor candidato → liberar el lock del anterior 'best'
+          release(&best->lock);
+          best = p;              // y conservar este lock tomado
+          continue;
+        }
       }
+      // p no es candidato → soltar su lock
       release(&p->lock);
     }
-    if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
-      asm volatile("wfi");
+
+    if(best){
+      // Ejecutar al mejor candidato (tenemos su lock tomado)
+      best->state = RUNNING;
+      c->proc = best;
+      swtch(&c->context, &best->context);
+      c->proc = 0;
+      // Al volver del swtch, el proceso habrá cambiado su estado (yield/sleep/exit)
+      release(&best->lock);
     }
   }
 }
+        
 
 // Switch to scheduler.  Must hold only p->lock
 // and have changed proc->state. Saves and restores
