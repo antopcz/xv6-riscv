@@ -20,6 +20,34 @@ sys_getpid(void)
 {
   return myproc()->pid;
 }
+// getppid(): retorna el pid del padre, o -1 si no existe
+uint64
+sys_getppid(void)
+{
+  struct proc *p = myproc();
+  if(p->parent)
+    return p->parent->pid;
+  return -1;
+}
+
+// getancestor(n): 0=self, 1=padre, 2=abuelo...
+uint64
+sys_getancestor(void)
+{
+  int n;
+  argint(0, &n);   // no retorna nada en xv6-riscv
+  if(n < 0)
+    return -1;
+
+  struct proc *a = myproc();
+  for(int i = 0; i < n; i++){
+    if(a->parent == 0)
+      return -1;
+    a = a->parent;
+  }
+  return a->pid;
+}
+
 
 uint64
 sys_fork(void)
