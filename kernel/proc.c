@@ -1,3 +1,11 @@
+// --- Random generator for Lottery Scheduling ---
+static unsigned long rand_seed = 1;
+
+int rand(void) {
+  rand_seed = rand_seed * 1664525 + 1013904223; // fórmula LCG
+  return (rand_seed >> 16) & 0x7FFF;            // retorna 15 bits
+}
+
 #include "types.h"
 #include "param.h"
 #include "memlayout.h"
@@ -124,6 +132,11 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+
+  // Inicialización para Lottery Scheduling
+  p->tickets = 100;      // valor por defecto
+  p->cpu_slices = 0;     // contador inicial
+
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -432,21 +445,56 @@ scheduler(void)
     intr_off();
 
     int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+for(p = proc; p < &proc[NPROC]; p++) {  
+  for(;;){
+  // Habilita interrupciones en este CPU
+  intr_on();
+  struct proc *p;
+  struct proc *chosen = 0;
+  int total_tickets = 0;
+
+  // 1️⃣ Calcular total de tickets de procesos RUNNABLE
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->state == RUNNABLE && p->tickets > 0)
+      total_tickets += p->tickets;
+    release(&p->lock);
+  }
+
+  if(total_tickets == 0)
+    continue;
+
+  // 2️⃣ Elegir número de ticket ganador
+  int winner = rand() % total_tickets;
+  int acc = 0;
+
+  // 3️⃣ Buscar proceso ganador
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->state == RUNNABLE){
+      acc += p->tickets;
+      if(acc > winner){
+        chosen = p;
+        break;
       }
+    }
+    release(&p->lock);
+  }
+
+  // 4️⃣ Ejecutar proceso elegido
+  if(chosen){
+    chosen->state = RUNNING;
+    chosen->cpu_slices++; // cuenta cuántas veces fue elegido
+    c->proc = chosen;
+
+    swtch(&c->context, &chosen->context);
+
+    c->proc = 0;
+    release(&chosen->lock);
+  }
+}
+
       release(&p->lock);
     }
     if(found == 0) {

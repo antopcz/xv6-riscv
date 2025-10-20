@@ -88,6 +88,7 @@ sys_kill(void)
 
 // return how many clock tick interrupts have occurred
 // since start.
+
 uint64
 sys_uptime(void)
 {
@@ -98,3 +99,20 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// Nueva syscall: sys_settickets
+uint64
+sys_settickets(void)
+{
+  int n;
+  argint(0, &n);  // obtiene el argumento del usuario
+
+  if(n < 1)
+    n = 1;  // evita valores inválidos
+
+  struct proc *p = myproc();
+  p->tickets = n;
+
+  return 0;
+}
+
