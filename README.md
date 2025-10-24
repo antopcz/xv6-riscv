@@ -5,7 +5,6 @@
 **Sistema:** xv6-riscv  
 **Fecha:** Octubre 2025  
 
----
 
 ## 1. Funcionamiento y lógica de la implementación (2 pts)
 
@@ -23,7 +22,6 @@ El funcionamiento general del scheduler implementado es el siguiente:
 Con este mecanismo, la probabilidad de ejecución de un proceso es proporcional a la cantidad de tickets que posee.  
 El algoritmo mantiene la concurrencia y evita bloqueos, garantizando que todos los procesos con tickets positivos tengan oportunidad de ejecución.
 
----
 
 ## 2. Explicación de las modificaciones realizadas (1 pt)
 
