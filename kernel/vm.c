@@ -485,3 +485,66 @@ ismapped(pagetable_t pagetable, uint64 va)
   }
   return 0;
 }
+int
+mrdprotect(void *addr, int len)
+{
+  struct proc *p = myproc();
+  pagetable_t pagetable = p->pagetable;
+  uint64 va = (uint64)addr;
+
+  if(len <= 0)
+    return -1;
+
+  // addr debe estar alineada a página
+  if(va % PGSIZE != 0)
+    return -1;
+
+  for(int i = 0; i < len; i++){
+    uint64 a = va + i * PGSIZE;
+    pte_t *pte = walk(pagetable, a, 0);
+    if(pte == 0)
+      return -1;
+
+    // Debe estar mapeada, válida y de usuario
+    if(((*pte & PTE_V) == 0) || ((*pte & PTE_U) == 0))
+      return -1;
+
+    // Limpiar bit de lectura sin tocar los otros
+    *pte &= ~PTE_R;
+  }
+
+  // Asegurar que el TLB se actualice
+  sfence_vma();
+  return 0;
+}
+
+int
+munrdprotect(void *addr, int len)
+{
+  struct proc *p = myproc();
+  pagetable_t pagetable = p->pagetable;
+  uint64 va = (uint64)addr;
+
+  if(len <= 0)
+    return -1;
+
+  if(va % PGSIZE != 0)
+    return -1;
+
+  for(int i = 0; i < len; i++){
+    uint64 a = va + i * PGSIZE;
+    pte_t *pte = walk(pagetable, a, 0);
+    if(pte == 0)
+      return -1;
+
+    if(((*pte & PTE_V) == 0) || ((*pte & PTE_U) == 0))
+      return -1;
+
+    // Restaurar permiso de lectura
+    *pte |= PTE_R;
+  }
+
+  sfence_vma();
+  return 0;
+}
+
